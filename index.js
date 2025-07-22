@@ -14,7 +14,7 @@ const authRouter = require("./src/routers/auth.js");
 const catRouter = require("./src/routers/cat.js");
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.use(bodyParser.json());
