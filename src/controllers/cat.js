@@ -1,5 +1,6 @@
 const modelKucing = require("../models/Kucing.js");
 const path = require("path");
+const modelPerjodohan = require("../models/Perjodohan.js");
 
 // Helper function untuk menghitung umur dalam bulan
 const calculateAgeInMonths = (birthDate) => {
@@ -87,6 +88,115 @@ const calculateMatchScore = (selectedCat, candidateCat) => {
   return score;
 };
 
+exports.updatePerjodohanStatus = async (req, res, next) => {
+  try {
+    const { status, kucing1, kucing2 } = req.body;
+
+    const perjodohan = await modelPerjodohan.findOne({
+      $or: [
+        { kucing1: kucing1, kucing2: kucing2 },
+        { kucing1: kucing2, kucing2: kucing1 },
+      ],
+    });
+    if (!perjodohan) {
+      return res.status(404).json({ message: "Perjodohan tidak ditemukan" });
+    }
+    const formatStasus = status ? "berhasil" : "gagal";
+    perjodohan.status = formatStasus;
+    await perjodohan.save();
+    res
+      .status(200)
+      .json({ message: "Status perjodohan berhasil diperbarui", perjodohan });
+  } catch (error) {
+    console.error("Error updating perjodohan status:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server" });
+    next(error);
+  }
+};
+
+exports.getPerjodohan = async (req, res, next) => {
+  try {
+    const { kucingId } = req.params;
+
+    const perjodohan = await modelPerjodohan
+      .find({ $or: [{ kucing1: kucingId }, { kucing2: kucingId }] })
+      .populate("kucing1")
+      .populate("kucing2")
+      .exec();
+
+    // Ambil pasangan dan gabungkan dengan status + tanggal
+    const pasangan = perjodohan.map((p) => {
+      const pasanganKucing =
+        p.kucing1._id.toString() === kucingId ? p.kucing2 : p.kucing1;
+
+      // convert mongoose doc jadi object plain
+      const pasanganObj = pasanganKucing.toObject();
+
+      // tambahkan status + tanggal dari perjodohan
+      return {
+        ...pasanganObj,
+        status: p.status,
+        tanggal: p.tanggal,
+      };
+    });
+
+    res.status(200).json(pasangan);
+  } catch (error) {
+    console.error("Error fetching perjodohan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server" });
+    next(error);
+  }
+};
+
+exports.addPerjodohan = async (req, res) => {
+  try {
+    const { kucing1Id, kucing2Id, catatan } = req.body;
+    if (kucing1Id === kucing2Id) {
+      return res
+        .status(400)
+        .json({ message: "Kucing yang dipilih tidak boleh sama" });
+    }
+
+    const kucing1 = await modelKucing.findById(kucing1Id);
+    const kucing2 = await modelKucing.findById(kucing2Id);
+    if (!kucing1 || !kucing2) {
+      return res.status(404).json({ message: "Kucing tidak ditemukan" });
+    }
+    if (kucing1.userRef.toString() === kucing2.userRef.toString()) {
+      return res
+        .status(400)
+        .json({ message: "Kucing harus berasal dari pemilik yang berbeda" });
+    }
+    // Cek apakah perjodohan antara kedua kucing sudah ada
+    const existingPerjodohan = await modelPerjodohan.findOne({
+      $or: [
+        { kucing1: kucing1Id, kucing2: kucing2Id },
+        { kucing1: kucing2Id, kucing2: kucing1Id },
+      ],
+    });
+    if (existingPerjodohan) {
+      return res
+        .status(400)
+        .json({ message: "Perjodohan antara kedua kucing sudah ada" });
+    }
+
+    // Buat entri perjodohan baru
+    const newPerjodohan = new modelPerjodohan({
+      kucing1: kucing1Id,
+      kucing2: kucing2Id,
+      catatan,
+    });
+    await modelPerjodohan.create(newPerjodohan);
+    res
+      .status(201)
+      .json({ message: "Perjodohan berhasil ditambahkan", newPerjodohan });
+  } catch (error) {
+    console.error("Error adding perjodohan:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server" });
+    next(error);
+  }
+};
+
 exports.getAllCats = async (req, res) => {
   try {
     const cats = await modelKucing.find();
@@ -152,9 +262,9 @@ exports.getRecommendedCats = async (req, res) => {
     recommendations.sort((a, b) => b.matchScore - a.matchScore);
 
     // 5. Ambil top 5 rekomendasi
-    const topRecommendations = recommendations.slice(0, 6);
+    // const topRecommendations = recommendations.slice(0, 6);
 
-    res.status(200).json(topRecommendations);
+    res.status(200).json(recommendations);
   } catch (error) {
     console.error("Error fetching recommended cats:", error);
     res.status(500).json({ message: "Terjadi kesalahan pada server" });
@@ -215,8 +325,7 @@ exports.addCat = async (req, res) => {
     const baseUrl = `${req.protocol}://${req.get("host")}/uploads/${
       fotoKucing.filename
     }`;
-    console.log("userRef:", ownerId);
-    console.log("body", req.body);
+
     const newCat = new modelKucing({
       userRef: ownerId,
       nama: name,

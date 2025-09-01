@@ -6,10 +6,10 @@ exports.login = async (req, res) => {
 
     const user = await modelUser.findOne({ username });
     if (!user) {
-      return res.status(400).json({ message: "Username tidak ditemukan" });
+      return res.status(400).json({ message: "Username dan Password salah" });
     }
     if (user.password !== password) {
-      return res.status(400).json({ message: "Password salah" });
+      return res.status(400).json({ message: "Username dan Password salah" });
     }
     res.status(200).json({
       message: "Login berhasil",
